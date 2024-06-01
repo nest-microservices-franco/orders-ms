@@ -1,26 +1,69 @@
-import { Injectable } from '@nestjs/common';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
+import { HttpStatus, Injectable, OnModuleInit } from '@nestjs/common';
+import { CreateOrderDto, OrderPaginationDto } from './dto';
+import { OrderStatus, PrismaClient } from '@prisma/client';
+import { RpcException } from '@nestjs/microservices';
 
 @Injectable()
-export class OrdersService {
+export class OrdersService extends PrismaClient implements OnModuleInit {
+  async onModuleInit() {
+    await this.$connect();
+  }
+
   create(createOrderDto: CreateOrderDto) {
-    return 'This action adds a new order';
+    return this.order.create({
+      data: createOrderDto,
+    });
   }
 
-  findAll() {
-    return `This action returns all orders`;
+  async findAll(orderPaginationDto: OrderPaginationDto) {
+    const { page, limit, status } = orderPaginationDto;
+
+    const totalPages = await this.order.count({ where: { status } });
+    const lastPage = Math.ceil(totalPages / limit);
+    return {
+      data: await this.order.findMany({
+        skip: limit * (page - 1),
+        take: limit,
+        where: { status },
+      }),
+      meta: {
+        total: totalPages,
+        lastPage,
+        page,
+      },
+    };
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} order`;
+  async findOne(id: string) {
+    const order = await this.order.findUnique({
+      where: {
+        id,
+      },
+    });
+
+    if (!order)
+      throw new RpcException({
+        status: HttpStatus.NOT_FOUND,
+        message: `Order with id: ${id} not found`,
+      });
+
+    return order;
   }
 
-  update(id: number, updateOrderDto: UpdateOrderDto) {
-    return `This action updates a #${id} order`;
-  }
+  async changeStatus(id: string, status: OrderStatus) {
+    const order = await this.findOne(id);
 
-  remove(id: number) {
-    return `This action removes a #${id} order`;
+    if (order.status === status) {
+      return order;
+    }
+
+    return this.order.update({
+      where: {
+        id,
+      },
+      data: {
+        status,
+      },
+    });
   }
 }
