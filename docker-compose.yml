@@ -1,6 +1,5 @@
 services:
   orders-db:
-    container_name: orders_database
     image: postgres:16.2
     restart: always
     volumes:
